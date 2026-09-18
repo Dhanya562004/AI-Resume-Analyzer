@@ -17,88 +17,73 @@ Why it's built this way (read this before your interview):
   so the output is consistent and easy to read every time.
 """
 import streamlit as st
-import re
-from PyPDF2 import PdfReader
+from transformers import pipeline
+import PyPDF2
 
-# ---------------- UI ----------------
-st.set_page_config(page_title="AI Resume Analyzer", page_icon="📄")
+# -----------------------
+# Load LLM (FREE model)
+# -----------------------
+@st.cache_resource
+def load_model():
+    return pipeline("text2text-generation", model="google/flan-t5-base")
 
-st.title("📄 AI Resume Analyzer (Pro)")
-st.caption("Upload your resume + paste job description → get smart analysis")
+generator = load_model()
 
-# ---------------- PDF Upload ----------------
-uploaded_file = st.file_uploader("Upload Resume (PDF only)", type=["pdf"])
-
-resume_text = ""
-
-if uploaded_file:
-    reader = PdfReader(uploaded_file)
+# -----------------------
+# Extract text from PDF
+# -----------------------
+def extract_pdf(file):
+    reader = PyPDF2.PdfReader(file)
+    text = ""
     for page in reader.pages:
-        resume_text += page.extract_text()
+        text += page.extract_text()
+    return text
 
-# ---------------- JD Input ----------------
-jd = st.text_area("Paste Job Description", height=200)
+# -----------------------
+# Page UI
+# -----------------------
+st.set_page_config(page_title="GenAI Resume Analyzer", page_icon="🤖")
 
-# ---------------- ANALYSIS FUNCTION ----------------
-def analyze_resume(resume, jd):
-    resume_words = set(re.findall(r'\b\w+\b', resume.lower()))
-    jd_words = set(re.findall(r'\b\w+\b', jd.lower()))
+st.title("🤖 GenAI Resume Analyzer")
+st.caption("Upload your resume and compare with a job description using AI")
 
-    # remove common words
-    stopwords = {
-        "and","or","the","a","an","to","of","in","on","for","with",
-        "is","are","was","were","be","been","being",
-        "good","excellent","strong","skills","ability",
-        "communication","interpersonal","team","player"
-    }
+# -----------------------
+# Inputs
+# -----------------------
+uploaded_file = st.file_uploader("Upload Resume (PDF)", type=["pdf"])
+jd = st.text_area("Paste Job Description")
 
-    resume_words -= stopwords
-    jd_words -= stopwords
-
-    # focus on meaningful keywords
-    jd_keywords = {w for w in jd_words if len(w) > 3}
-    resume_keywords = {w for w in resume_words if len(w) > 3}
-
-    matched = resume_keywords & jd_keywords
-    missing = jd_keywords - resume_keywords
-
-    score = int((len(matched) / len(jd_keywords)) * 100) if jd_keywords else 0
-
-    return score, matched, missing
-
-# ---------------- BUTTON ----------------
-if st.button("Analyze 🚀"):
+# -----------------------
+# Analyze
+# -----------------------
+if st.button("Analyze", type="primary"):
 
     if not uploaded_file or not jd.strip():
-        st.warning("Please upload resume and enter job description")
+        st.warning("Please upload resume and paste job description")
     else:
-        score, matched, missing = analyze_resume(resume_text, jd)
+        resume_text = extract_pdf(uploaded_file)
 
-        st.success("Analysis Complete ✅")
+        prompt = f"""
+You are an expert technical recruiter.
 
-        # Score
-        st.subheader("📊 Match Score")
-        st.progress(score)
-        st.write(f"**{score}% match based on technical keywords**")
+Analyze the following resume and job description.
 
-        # Matched
-        st.subheader("✅ Matching Skills")
-        if matched:
-            st.write(", ".join(list(matched)[:10]))
-        else:
-            st.write("No strong matches found")
+Give output in this format:
 
-        # Missing
-        st.subheader("❌ Missing Skills")
-        if missing:
-            st.write(", ".join(list(missing)[:10]))
-        else:
-            st.write("Great! No major missing skills")
+1. Match Score (0-100%) with reason
+2. Key Strengths (bullet points)
+3. Missing Skills (bullet points)
+4. Suggestions to Improve (clear, human advice)
 
-        # Suggestions
-        st.subheader("💡 Suggestions")
-        st.write("""
-- Add missing tools/technologies mentioned in JD  
-- Improve project descriptions using these keywords  
-- Focus on measurable impact (e.g., accuracy %, performance)  
-""")
+RESUME:
+{resume_text[:2000]}
+
+JOB DESCRIPTION:
+{jd[:2000]}
+"""
+
+        with st.spinner("Analyzing with AI..."):
+            result = generator(prompt, max_length=512, do_sample=True)[0]["generated_text"]
+
+        st.markdown("## 📊 Analysis Result")
+        st.write(result)
