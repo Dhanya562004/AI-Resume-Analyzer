@@ -17,20 +17,19 @@ Why it's built this way (read this before your interview):
   so the output is consistent and easy to read every time.
 """
 import streamlit as st
-from transformers import pipeline
+import requests
 import PyPDF2
 
 # -----------------------
-# Load model
+# Load API key
 # -----------------------
-@st.cache_resource
-def load_model():
-    return pipeline("text2text-generation", model="google/flan-t5-large")
+HF_TOKEN = st.secrets["HF_TOKEN"]
 
-generator = load_model()
+API_URL = "https://api-inference.huggingface.co/models/google/flan-t5-base"
+headers = {"Authorization": f"Bearer {HF_TOKEN}"}
 
 # -----------------------
-# Extract PDF text
+# Extract PDF
 # -----------------------
 def extract_pdf(file):
     reader = PyPDF2.PdfReader(file)
@@ -41,12 +40,19 @@ def extract_pdf(file):
     return text
 
 # -----------------------
+# Call API
+# -----------------------
+def query(payload):
+    response = requests.post(API_URL, headers=headers, json=payload)
+    return response.json()
+
+# -----------------------
 # UI
 # -----------------------
 st.set_page_config(page_title="GenAI Resume Analyzer", page_icon="🤖")
 
 st.title("🤖 GenAI Resume Analyzer")
-st.write("AI-powered resume vs job description analyzer")
+st.write("AI-powered resume analyzer")
 
 uploaded_file = st.file_uploader("Upload Resume (PDF)", type=["pdf"])
 jd = st.text_area("Paste Job Description")
@@ -62,26 +68,15 @@ if st.button("Analyze"):
         resume_text = extract_pdf(uploaded_file)
 
         prompt = f"""
-You are a senior technical recruiter.
+You are a professional recruiter.
 
-Carefully analyze the resume and job description below.
+Analyze resume vs job description.
 
-Give a detailed and DIFFERENT response each time.
-
-Format:
-
-MATCH SCORE: (0-100 with reasoning)
-
-STRENGTHS:
-- ...
-
-MISSING SKILLS:
-- ...
-
-SUGGESTIONS:
-- ...
-
-Be specific and realistic.
+Give:
+1. Match Score (0-100 + reason)
+2. Strengths
+3. Missing Skills
+4. Suggestions
 
 RESUME:
 {resume_text[:1500]}
@@ -90,13 +85,13 @@ JOB DESCRIPTION:
 {jd[:1500]}
 """
 
-        with st.spinner("Running AI analysis..."):
-            result = generator(
-                prompt,
-                max_length=400,
-                do_sample=True,
-                temperature=0.9
-            )[0]["generated_text"]
+        with st.spinner("Analyzing..."):
+            result = query({"inputs": prompt})
+
+        try:
+            output = result[0]["generated_text"]
+        except:
+            output = str(result)
 
         st.subheader("📊 Result")
-        st.write(result)
+        st.write(output)
