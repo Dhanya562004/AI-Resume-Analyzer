@@ -21,69 +21,82 @@ from transformers import pipeline
 import PyPDF2
 
 # -----------------------
-# Load LLM (FREE model)
+# Load model
 # -----------------------
 @st.cache_resource
 def load_model():
-    return pipeline("text2text-generation", model="google/flan-t5-base")
+    return pipeline("text2text-generation", model="google/flan-t5-large")
 
 generator = load_model()
 
 # -----------------------
-# Extract text from PDF
+# Extract PDF text
 # -----------------------
 def extract_pdf(file):
     reader = PyPDF2.PdfReader(file)
     text = ""
     for page in reader.pages:
-        text += page.extract_text()
+        if page.extract_text():
+            text += page.extract_text()
     return text
 
 # -----------------------
-# Page UI
+# UI
 # -----------------------
 st.set_page_config(page_title="GenAI Resume Analyzer", page_icon="🤖")
 
 st.title("🤖 GenAI Resume Analyzer")
-st.caption("Upload your resume and compare with a job description using AI")
+st.write("AI-powered resume vs job description analyzer")
 
-# -----------------------
-# Inputs
-# -----------------------
 uploaded_file = st.file_uploader("Upload Resume (PDF)", type=["pdf"])
 jd = st.text_area("Paste Job Description")
 
 # -----------------------
-# Analyze
+# ANALYZE
 # -----------------------
-if st.button("Analyze", type="primary"):
+if st.button("Analyze"):
 
     if not uploaded_file or not jd.strip():
-        st.warning("Please upload resume and paste job description")
+        st.warning("Upload resume and paste job description")
     else:
         resume_text = extract_pdf(uploaded_file)
 
         prompt = f"""
-You are an expert technical recruiter.
+You are a senior technical recruiter.
 
-Analyze the following resume and job description.
+Carefully analyze the resume and job description below.
 
-Give output in this format:
+Give a detailed and DIFFERENT response each time.
 
-1. Match Score (0-100%) with reason
-2. Key Strengths (bullet points)
-3. Missing Skills (bullet points)
-4. Suggestions to Improve (clear, human advice)
+Format:
+
+MATCH SCORE: (0-100 with reasoning)
+
+STRENGTHS:
+- ...
+
+MISSING SKILLS:
+- ...
+
+SUGGESTIONS:
+- ...
+
+Be specific and realistic.
 
 RESUME:
-{resume_text[:2000]}
+{resume_text[:1500]}
 
 JOB DESCRIPTION:
-{jd[:2000]}
+{jd[:1500]}
 """
 
-        with st.spinner("Analyzing with AI..."):
-            result = generator(prompt, max_length=512, do_sample=True)[0]["generated_text"]
+        with st.spinner("Running AI analysis..."):
+            result = generator(
+                prompt,
+                max_length=400,
+                do_sample=True,
+                temperature=0.9
+            )[0]["generated_text"]
 
-        st.markdown("## 📊 Analysis Result")
+        st.subheader("📊 Result")
         st.write(result)
